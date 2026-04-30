@@ -15,7 +15,7 @@ OWNER_USERNAME = os.environ.get("TELEGRAM_OWNER_USERNAME", "").strip().lstrip("@
 OWNER_CONTACT_URL = f"https://t.me{OWNER_USERNAME}" if OWNER_USERNAME else "https://t.me"
 
 FREE_LIMIT = 25
-WELCOME_TEXT = "مرحباً بك 👋 أنا بوت تحميل الفيديوهات. أرسل الرابط مباشرة."
+WELCOME_TEXT = "مرحباً بك 👋 أنا بوت تحميل الفيديوهات.من مواقع تواصل فقط أرسل الرابط مباشر او اضغط على ازرار تحت."
 
 TELEGRAM_VERIFY_CHANNELS = [
     {"username": "@Naru62x", "title": "قناة Naru62x", "url": "https://t.meNaru62x"},
