@@ -1,145 +1,151 @@
-import telebot
-from telebot import types
-import yt_dlp
 import os
-from config import TOKEN, CHANNELS
+import logging
+import yt_dlp
+from flask import Flask
+from threading import Thread
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-bot = telebot.TeleBot(8734069991:AAHgDiwyeSzuGCMcEZ6UO6vcDK2SSraSDfA
-)
+# --- إعداد Flask للعمل في الخلفية (Keep Alive) ---
+flask_app = Flask('')
 
-def check_membership(user_id):
-    for channel in CHANNELS:
-        try:
-            member = bot.get_chat_member(channel, user_id)
-            if member.status not in ['member', 'administrator', 'creator']:
-                return False
-        except Exception:
-            return False
-    return True
+@flask_app.route('/')
+def home():
+    return "I am alive"
 
-def get_platform_buttons():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("YouTube ▶️", callback_data="plat_youtube"),
-        types.InlineKeyboardButton("Instagram 📸", callback_data="plat_instagram"),
-        types.InlineKeyboardButton("TikTok 🎵", callback_data="plat_tiktok"),
-        types.InlineKeyboardButton("Facebook 🟦", callback_data="plat_facebook"),
+def run_flask():
+    # سيحاول Flask العمل على المنفذ المخصص من المنصة أو 8080 افتراضياً
+    port = int(os.environ.get('PORT', 8080))
+    flask_app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+
+# --- إعدادات البوت ---
+TOKEN = "8413954282:AAGuXUlZs9C_F9DY7avn9-d0zjWGPDYlfIg" # ⚠️ ضع التوكن الجديد هنا
+OWNER_ID = 8177120280
+FREE_LIMIT = 10
+PAID_LIMIT = 50
+users = {}
+
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+def get_user_limit(user_id):
+    if user_id == OWNER_ID:
+        return 999999
+    return users.get(user_id, FREE_LIMIT)
+
+def decrease_limit(user_id):
+    if user_id != OWNER_ID:
+        current = users.get(user_id, FREE_LIMIT)
+        users[user_id] = max(0, current - 1)
+
+# --- دوال المعالجة ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    keyboard = [
+        [InlineKeyboardButton("يوتيوب 📺", callback_data="youtube")],
+        [InlineKeyboardButton("إنستغرام 📸", callback_data="instagram")],
+        [InlineKeyboardButton("فيسبوك 👤", callback_data="facebook")]
+    ]
+    await update.message.reply_text(
+        f"مرحباً بك! رصيدك الحالي: {get_user_limit(user_id)} فيديو.\nاختر المنصة:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
-    return markup
 
-@bot.message_handler(commands=['start'])
-def start_msg(message):
-    user_id = message.from_user.id
-    if not check_membership(user_id):
-        markup = types.InlineKeyboardMarkup()
-        for c in CHANNELS:
-            markup.add(types.InlineKeyboardButton(f"اشترك في {c}", url=f"https://t.me/{c.replace('@','')}" ))
-        markup.add(types.InlineKeyboardButton("✅ تحقق", callback_data="verif"))
-        sent = bot.send_message(message.chat.id,
-            "الرجاء الإشتراك في القنوات التالية لاستخدام البوت ثم اضغط تحقق 👇", reply_markup=markup)
+async def platform_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    platform = query.data
+    await query.edit_message_text(f"لقد اخترت {platform.capitalize()}. أرسل رابط الفيديو الآن 🔗")
+
+async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    link = update.message.text
+
+    if get_user_limit(user_id) <= 0:
+        await update.message.reply_text("انتهت محاولاتك ❌\nاشترك بالنجوم للحصول على محاولات إضافية.")
         return
 
-    markup = get_platform_buttons()
-    bot.send_message(
-        message.chat.id, 
-        "مرحبًا أنا بوت تم تصميمي من أجل تنزيل فيديوهات من مواقع التواصل الاجتماعي بجودة عالية.\n\nأرسل رابط أو اختر أزرار المنصات 👇", 
-        reply_markup=markup
-    )
+    status_msg = await update.message.reply_text("جاري فحص الرابط... 🔍")
 
-@bot.callback_query_handler(func=lambda call: call.data == "verif")
-def verify(call):
-    user_id = call.from_user.id
-    if check_membership(user_id):
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        markup = get_platform_buttons()
-        bot.send_message(
-            call.message.chat.id, 
-            "تم التحقق بنجاح ✅\n\nمرحبًا أنا بوت تم تصميمي من أجل تنزيل فيديوهات من مواقع التواصل الاجتماعي بجودة عالية.\n\nأرسل رابط أو اختر أزرار المنصات 👇", 
-            reply_markup=markup
-        )
-    else:
-        bot.answer_callback_query(call.id, "لم تكمل متطلبات الإشتراك.")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("plat_"))
-def platform_selected(call):
-    platform = call.data.replace("plat_", "")
-    msg = {
-        "youtube": "أرسل رابط فيديو YouTube.",
-        "instagram": "أرسل رابط فيديو Instagram Reel.",
-        "tiktok": "أرسل رابط فيديو TikTok.",
-        "facebook": "أرسل رابط فيديو Facebook.",
-    }.get(platform, "أرسل الرابط.")
-    markup = get_platform_buttons()
-    bot.send_message(call.message.chat.id, msg, reply_markup=markup)
-
-@bot.message_handler(content_types=['text'])
-def text_msg(message):
-    user_id = message.from_user.id
-    if not check_membership(user_id):
-        markup = types.InlineKeyboardMarkup()
-        for c in CHANNELS:
-            markup.add(types.InlineKeyboardButton(f"اشترك في {c}", url=f"https://t.me/{c.replace('@','')}" ))
-        markup.add(types.InlineKeyboardButton("✅ تحقق", callback_data="verif"))
-        bot.send_message(message.chat.id, "الرجاء الاشتراك في القنوات أولاً ثم اضغط تحقق 👇", reply_markup=markup)
-        return
-
-    url = message.text.strip()
-    if not any(domain in url for domain in ['youtube.com', 'youtu.be', 'instagram.com', 'tiktok.com', 'facebook.com']):
-        markup = get_platform_buttons()
-        bot.reply_to(message, "الرجاء إرسال رابط صحيح من YouTube, Instagram, Facebook, TikTok.", reply_markup=markup)
-        return
-
-    # جلب الجودات
+    ydl_opts = {'quiet': True, 'no_warnings': True}
     try:
-        ydl_opts = {'quiet': True, 'listformats': True, 'skip_download': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(url, download=False)
-            formats = info_dict.get('formats', [])
-            videos = [f for f in formats if f.get('vcodec','none') != 'none' and f.get('acodec','none') != 'none']
-            buttons=[]
-            for v in videos:
-                if v.get("filesize", 0) and v['filesize'] > 2000*1024*1024: continue
-                desc = f"{v['format_note']} - {v.get('height','?')}p - {v.get('filesize',0)//1024//1024}MB"
-                cb = f"dl|{url}|{v['format_id']}"
-                buttons.append(types.InlineKeyboardButton(desc, callback_data=cb))
+            info = ydl.extract_info(link, download=False)
+            formats = info.get('formats', [])
+            
+            # فلترة الجودات التي تحتوي على صوت وفيديو معاً
+            available = [f for f in formats if f.get('height') and f.get('acodec') != 'none' and f.get('vcodec') != 'none']
+            
+            buttons = []
+            for f in available[:6]: # عرض أول 6 جودات فقط لتجنب كبر حجم القائمة
+                res = f.get('height')
+                ext = f.get('ext')
+                fid = f.get('format_id')
+                buttons.append([InlineKeyboardButton(f"{res}p - {ext}", callback_data=f"dl|{fid}|{link}")])
+
             if not buttons:
-                raise Exception("لا توجد جودات مناسبة لهذا الفيديو.")
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        for bt in buttons: markup.add(bt)
-        bot.send_message(message.chat.id, "اختر الجودة المطلوبة:", reply_markup=markup)
+                buttons.append([InlineKeyboardButton("أفضل جودة متاحة", callback_data=f"dl|best|{link}")])
+
+            await status_msg.edit_text("اختر الجودة المطلوبة:", reply_markup=InlineKeyboardMarkup(buttons))
+
     except Exception as e:
-        print(e)
-        bot.reply_to(message, "لم أستطع جلب الجودات أو هذا الرابط غير مدعوم.")
+        await status_msg.edit_text("حدث خطأ: الرابط غير مدعوم أو غير صحيح ❌")
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("dl|"))
-def send_video(call):
-    parts = call.data.split('|')
-    url = parts[1]
-    fmt = parts[2]
+async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data_split = query.data.split("|")
+    format_id = data_split[1]
+    link = data_split[2]
+    user_id = query.from_user.id
+    
+    await query.edit_message_text("جاري التحميل والمعالجة... ⏳")
+    
+    file_path = f"video_{user_id}.mp4"
+    ydl_opts = {
+        'format': format_id,
+        'outtmpl': file_path,
+        'quiet': True,
+    }
 
-    msg = bot.send_message(call.message.chat.id, "جاري تنزيل الفيديو...⏳")
     try:
-        ydl_opts = {
-            "format": fmt,
-            "outtmpl": "%(id)s.%(ext)s",
-            "quiet": True,
-            "merge_output_format": "mp4"
-        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-
-        if os.path.getsize(filename) > 1900 * 1024 * 1024:
-            bot.edit_message_text("الفيديو أكبر من الحد المسموح به في تيليجرام (2GB)!", call.message.chat.id, msg.id)
-            os.remove(filename)
-            return
-
-        with open(filename, "rb") as f:
-            bot.send_video(call.message.chat.id, f, caption="تم تنزيل الفيديو ✅", reply_markup=get_platform_buttons())
-        os.remove(filename)
-        bot.delete_message(call.message.chat.id, msg.id)
+            ydl.download([link])
+        
+        with open(file_path, 'rb') as video_file:
+            await query.message.reply_video(video=video_file, caption="تم التحميل بنجاح ✅")
+        
+        decrease_limit(user_id)
+        await query.message.delete()
     except Exception as e:
-        print(e)
-        bot.edit_message_text("حدث خطأ أثناء التحميل أو لا يمكن تحميل هذا الرابط.", call.message.chat.id, msg.id)
+        await query.message.reply_text(f"فشل التحميل ❌")
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
-bot.infinity_polling()
+async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    users[user_id] = PAID_LIMIT
+    await update.message.reply_text(f"تم تفعيل الخطة المدفوعة! رصيدك: {PAID_LIMIT} فيديو ⭐")
+
+# --- تشغيل البوت ---
+if __name__ == '__main__':
+    # تشغيل Flask أولاً
+    keep_alive()
+
+    # تشغيل بوت تلغرام
+    application = ApplicationBuilder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("pay", pay))
+    application.add_handler(CallbackQueryHandler(platform_button, pattern="^(youtube|instagram|facebook)$"))
+    application.add_handler(CallbackQueryHandler(download_video, pattern=r"^dl\|"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
+
+    print("تم تشغيل Flask والبوت بنجاح...")
+    application.run_polling()
