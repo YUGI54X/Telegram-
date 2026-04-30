@@ -38,7 +38,7 @@ from telegram.error import BadRequest, Forbidden
 # ============================================================
 # الإعدادات الأساسية
 # ============================================================
-BOT_TOKEN = os.environ.get("8413954282:AAFLK9JkREO_F0bNwAZx1SrdXIIaiNvtYnA")
+BOT_TOKEN = os.environ.get("8413954282:AAHtHCXadEghvIQVLjcAUlPS7KWa94k320A")
 OWNER_ID = 8413954282
 DATA_FILE = Path("bot_data.json")
 DOWNLOADS_DIR = Path("downloads")
