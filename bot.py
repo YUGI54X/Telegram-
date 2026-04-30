@@ -1,151 +1,88 @@
-import os
-import logging
+import telebot
+from telebot import types
 import yt_dlp
-from flask import Flask
-from threading import Thread
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+import os
 
-# --- إعداد Flask للعمل في الخلفية (Keep Alive) ---
-flask_app = Flask('')
+# ضع التوكن الخاص بك هنا
+API_TOKEN = '8413954282:AAFFhbrVyipntxz08eymgoF6O1ePTJznZL4'
+bot = telebot.TeleBot(API_TOKEN)
 
-@flask_app.route('/')
-def home():
-    return "I am alive"
+# تخزين مؤقت لروابط المستخدمين
+user_data = {}
 
-def run_flask():
-    # سيحاول Flask العمل على المنفذ المخصص من المنصة أو 8080 افتراضياً
-    port = int(os.environ.get('PORT', 8080))
-    flask_app.run(host='0.0.0.0', port=port)
+def get_video_info(url):
+    ydl_opts = {'quiet': True, 'noplaylist': True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        return ydl.extract_info(url, download=False)
 
-def keep_alive():
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-
-# --- إعدادات البوت ---
-TOKEN = "8413954282:AAGuXUlZs9C_F9DY7avn9-d0zjWGPDYlfIg" # ⚠️ ضع التوكن الجديد هنا
-OWNER_ID = 8177120280
-FREE_LIMIT = 10
-PAID_LIMIT = 50
-users = {}
-
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-def get_user_limit(user_id):
-    if user_id == OWNER_ID:
-        return 999999
-    return users.get(user_id, FREE_LIMIT)
-
-def decrease_limit(user_id):
-    if user_id != OWNER_ID:
-        current = users.get(user_id, FREE_LIMIT)
-        users[user_id] = max(0, current - 1)
-
-# --- دوال المعالجة ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    keyboard = [
-        [InlineKeyboardButton("يوتيوب 📺", callback_data="youtube")],
-        [InlineKeyboardButton("إنستغرام 📸", callback_data="instagram")],
-        [InlineKeyboardButton("فيسبوك 👤", callback_data="facebook")]
+def start_markup():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btns = [
+        types.InlineKeyboardButton("Facebook", url="https://facebook.com"),
+        types.InlineKeyboardButton("Instagram", url="https://instagram.com"),
+        types.InlineKeyboardButton("YouTube", url="https://youtube.com"),
+        types.InlineKeyboardButton("TikTok", url="https://tiktok.com"),
+        types.InlineKeyboardButton("X (Twitter)", url="https://x.com")
     ]
-    await update.message.reply_text(
-        f"مرحباً بك! رصيدك الحالي: {get_user_limit(user_id)} فيديو.\nاختر المنصة:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    markup.add(*btns)
+    return markup
 
-async def platform_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    platform = query.data
-    await query.edit_message_text(f"لقد اخترت {platform.capitalize()}. أرسل رابط الفيديو الآن 🔗")
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    welcome_text = "مرحبًا بك، في بوت دراكولا ، لقد تم تصميم لتنزيل فيديوهات من مواقع التواصل ، أرسل رابط مباشر أو أختر احدى منصات من أزرار ،"
+    bot.send_message(message.chat.id, welcome_text, reply_markup=start_markup())
 
-async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    link = update.message.text
-
-    if get_user_limit(user_id) <= 0:
-        await update.message.reply_text("انتهت محاولاتك ❌\nاشترك بالنجوم للحصول على محاولات إضافية.")
-        return
-
-    status_msg = await update.message.reply_text("جاري فحص الرابط... 🔍")
-
-    ydl_opts = {'quiet': True, 'no_warnings': True}
+@bot.message_handler(func=lambda message: message.text.startswith('http'))
+def handle_link(message):
+    url = message.text
+    msg = bot.reply_to(message, "⏳ جاري جلب الجودات المتاحة...")
+    
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(link, download=False)
-            formats = info.get('formats', [])
-            
-            # فلترة الجودات التي تحتوي على صوت وفيديو معاً
-            available = [f for f in formats if f.get('height') and f.get('acodec') != 'none' and f.get('vcodec') != 'none']
-            
-            buttons = []
-            for f in available[:6]: # عرض أول 6 جودات فقط لتجنب كبر حجم القائمة
-                res = f.get('height')
-                ext = f.get('ext')
-                fid = f.get('format_id')
-                buttons.append([InlineKeyboardButton(f"{res}p - {ext}", callback_data=f"dl|{fid}|{link}")])
-
-            if not buttons:
-                buttons.append([InlineKeyboardButton("أفضل جودة متاحة", callback_data=f"dl|best|{link}")])
-
-            await status_msg.edit_text("اختر الجودة المطلوبة:", reply_markup=InlineKeyboardMarkup(buttons))
-
+        info = get_video_info(url)
+        user_data[message.chat.id] = url
+        
+        markup = types.InlineKeyboardMarkup()
+        # اختيار جودات محددة (عالية، متوسطة)
+        markup.add(types.InlineKeyboardButton("High Quality (أعلى جودة)", callback_data="hq"))
+        markup.add(types.InlineKeyboardButton("Low Quality (جودة منخفضة)", callback_data="lq"))
+        
+        bot.edit_message_text("اختر الجودة المطلوبة قبل التحميل:", message.chat.id, msg.message_id, reply_markup=markup)
     except Exception as e:
-        await status_msg.edit_text("حدث خطأ: الرابط غير مدعوم أو غير صحيح ❌")
+        bot.edit_message_text("❌ عذراً، الرابط غير مدعوم أو خاص.", message.chat.id, msg.message_id)
 
-async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+@bot.callback_query_handler(func=lambda call: call.data in ["hq", "lq"])
+def download_video(call):
+    url = user_data.get(call.message.chat.id)
+    if not url: return
+
+    bot.edit_message_text("🚀 جاري التحميل والإرسال... قد يستغرق ذلك دقيقة.", call.message.chat.id, call.message.message_id)
     
-    data_split = query.data.split("|")
-    format_id = data_split[1]
-    link = data_split[2]
-    user_id = query.from_user.id
+    # إعدادات التحميل بناءً على الجودة
+    format_opt = 'bestvideo+bestaudio/best' if call.data == "hq" else 'worstvideo+worstaudio/worst'
+    file_path = f"{call.message.chat.id}.mp4"
     
-    await query.edit_message_text("جاري التحميل والمعالجة... ⏳")
-    
-    file_path = f"video_{user_id}.mp4"
     ydl_opts = {
-        'format': format_id,
+        'format': format_opt,
         'outtmpl': file_path,
-        'quiet': True,
+        'merge_output_format': 'mp4',
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([link])
+            ydl.download([url])
         
-        with open(file_path, 'rb') as video_file:
-            await query.message.reply_video(video=video_file, caption="تم التحميل بنجاح ✅")
+        # إرسال الفيديو
+        with open(file_path, 'rb') as video:
+            bot.send_video(call.message.chat.id, video, caption="✅ تم التحميل بواسطة بوت دراكولا")
         
-        decrease_limit(user_id)
-        await query.message.delete()
+        # العودة للقائمة الرئيسية
+        send_welcome(call.message)
+        
     except Exception as e:
-        await query.message.reply_text(f"فشل التحميل ❌")
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        bot.send_message(call.message.chat.id, "❌ حدث خطأ أثناء التحميل.")
+    
+    # تنظيف الملفات
+    if os.path.exists(file_path):
+        os.remove(file_path)
 
-async def pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    users[user_id] = PAID_LIMIT
-    await update.message.reply_text(f"تم تفعيل الخطة المدفوعة! رصيدك: {PAID_LIMIT} فيديو ⭐")
-
-# --- تشغيل البوت ---
-if __name__ == '__main__':
-    # تشغيل Flask أولاً
-    keep_alive()
-
-    # تشغيل بوت تلغرام
-    application = ApplicationBuilder().token(TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("pay", pay))
-    application.add_handler(CallbackQueryHandler(platform_button, pattern="^(youtube|instagram|facebook)$"))
-    application.add_handler(CallbackQueryHandler(download_video, pattern=r"^dl\|"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
-
-    print("تم تشغيل Flask والبوت بنجاح...")
-    application.run_polling()
+bot.polling()
