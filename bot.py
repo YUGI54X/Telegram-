@@ -1,25 +1,19 @@
 import os
-import re
 import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-# --- الإعدادات (استبدلها بمعلوماتك) ---
+# --- الإعدادات ---
 TOKEN = "8413954282:AAFLK9JkREO_F0bNwAZx1SrdXIIaiNvtYnA"
-CHANNEL_ID = "@your_channel"  # معرف قناتك
-WELCOME_TEXT = "مرحباً بك! أنا بوت تنزيل الفيديوهات بجودة عالية 1080 ، فقط ارسل رابط مباشر أختار تحت المنصة."
-URL_RE = re.compile(r'https?://[^\s]+')
+OWNER_ID = 8177120280
+CHANNEL_ID = "@your_channel"  # استبدله بمعرف قناتك للاشتراك الإجباري
+FREE_LIMIT = 25
+PAID_LIMIT = 50
 
-# --- لوحة المفاتيح الرئيسية ---
-def main_menu_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("YouTube", callback_data="yt"), InlineKeyboardButton("TikTok", callback_data="tt")],
-        [InlineKeyboardButton("Facebook", callback_data="fb")],
-        [InlineKeyboardButton("Owner / التواصل", url="https://t.me")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+# تخزين البيانات (يفضل قاعدة بيانات لاحقاً)
+users = {}
 
-# --- دالة التحقق من الاشتراك ---
+# --- الوظائف المساعدة ---
 async def check_sub(user_id, bot):
     try:
         member = await bot.get_chat_member(CHANNEL_ID, user_id)
@@ -27,54 +21,100 @@ async def check_sub(user_id, bot):
     except:
         return False
 
-# --- أمر البدء ---
+def get_user_limit(user_id):
+    if user_id == OWNER_ID: return 999999
+    return users.get(user_id, FREE_LIMIT)
+
+def decrease_limit(user_id):
+    if user_id == OWNER_ID: return
+    users[user_id] = users.get(user_id, FREE_LIMIT) - 1
+
+# --- الأوامر ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # التحقق من الاشتراك الإجباري
     if not await check_sub(user_id, context.bot):
-        kb = [[InlineKeyboardButton("📢 اشترك في القناة أولاً", url=f"https://t.me{CHANNEL_ID[1:]}")]]
-        kb.append([InlineKeyboardButton("✅ تحقق من الاشتراك", callback_data="verify")])
+        kb = [
+            [InlineKeyboardButton("📢 اشترك في القناة أولاً", url=f"https://t.me{CHANNEL_ID[1:]}")],
+            [InlineKeyboardButton("✅ تحقق من الاشتراك", callback_data="verify")]
+        ]
         await update.message.reply_text("🚫 يجب عليك الاشتراك في القناة لاستخدام البوت:", reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    # إذا كان مشتركاً، تظهر الرسالة الترحيبية
-    target = update.message if update.message else update.callback_query.message
-    await target.reply_text(WELCOME_TEXT, reply_markup=main_menu_keyboard())
+    # الرسالة الترحيبية والأزرار
+    welcome_text = "مرحبًا أنا بوت مخصص للتنزيل فيديوهات من مواقع التواصل الاجتماعي، أرسل رابط مباشر أو اختر إحدى المنصات تحت:"
+    keyboard = [
+        [InlineKeyboardButton("YouTube", callback_data="youtube"), InlineKeyboardButton("TikTok", callback_data="tiktok")],
+        [InlineKeyboardButton("Instagram", callback_data="instagram"), InlineKeyboardButton("Facebook", callback_data="facebook")],
+        [InlineKeyboardButton("Owner / التواصل 👨‍💻", url=f"tg://user?id={OWNER_ID}")]
+    ]
+    
+    if update.message:
+        await update.message.reply_text(welcome_text, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.callback_query.message.reply_text(welcome_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- معالجة الروابط والتحميل ---
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text
-    if not URL_RE.match(url):
-        await update.message.reply_text("الرجاء إرسال رابط صحيح 🔗")
+async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    link = update.message.text
+
+    if get_user_limit(user_id) <= 0:
+        await update.message.reply_text("انتهت محاولاتك المجانية (25) ❌\nاشترك بالنجوم للحصول على 50 محاولة إضافية ⭐")
         return
 
-    msg = await update.message.reply_text("⏳ جاري معالجة الفيديو... قد يستغرق ذلك دقيقة.")
-    
-    try:
-        # إعدادات yt-dlp للتحميل (سيختار أفضل جودة متاحة تلقائياً)
-        ydl_opts = {
-            'format': 'bestvideo+bestaudio/best',
-            'outtmpl': 'video.%(ext)s',
-            'quiet': True,
-            'merge_output_format': 'mp4'
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info).replace('.webm', '.mp4') # تحويل التنسيق إذا لزم
-        
-        # إرسال الفيديو
-        await update.message.reply_video(video=open(filename, 'rb'), caption="تم التحميل بجودة عالية ✅")
-        os.remove(filename) # حذف الملف لتوفير مساحة في Railway
-        await msg.delete()
-    except Exception as e:
-        await msg.edit_text(f"❌ حدث خطأ أثناء التحميل: {str(e)}")
+    await update.message.reply_text("⏳ جاري جلب الجودات المتاحة...")
 
-# --- تشغيل البوت ---
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(start, pattern="^verify$"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    print("البوت يعمل الآن...")
-    app.run_polling()
+    try:
+        ydl_opts = {'quiet': True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(link, download=False)
+            formats = info.get('formats', [])
+            
+            buttons = []
+            # عرض أفضل 5 جودات متوفرة
+            seen_heights = set()
+            for f in formats:
+                height = f.get("height")
+                if height and height not in seen_heights:
+                    buttons.append([InlineKeyboardButton(f"{height}p", callback_data=f"dl|{link}|{f['format_id']}")])
+                    seen_heights.add(height)
+            
+            await update.message.reply_text("اختر الجودة المطلوبة للتحميل:", reply_markup=InlineKeyboardMarkup(buttons[:8]))
+
+    except Exception as e:
+        await update.message.reply_text("حدث خطأ في الرابط أو المنصة غير مدعومة ❌")
+
+async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("جاري التحميل... انتظر قليلاً")
+
+    data = query.data.split("|")
+    link, format_id = data[1], data[2]
+    user_id = query.from_user.id
+
+    file_name = f"video_{user_id}.mp4"
+    ydl_opts = {'format': f"{format_id}+bestaudio/best", 'outtmpl': file_name, 'merge_output_format': 'mp4'}
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([link])
+
+        await query.message.reply_video(video=open(file_name, 'rb'), caption="تم التحميل بواسطة بوتك ✅")
+        os.remove(file_name)
+        decrease_limit(user_id)
+    except:
+        await query.message.reply_text("فشل التحميل، جرب جودة أخرى ❌")
+
+# --- التشغيل ---
+app = ApplicationBuilder().token(TOKEN).build()
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CallbackQueryHandler(start, pattern="^verify$"))
+app.add_handler(CallbackQueryHandler(download, pattern="^dl"))
+# لتجنب تداخل الأزرار مع الروابط
+app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer("أرسل الرابط الآن 🔗"), pattern="^(youtube|instagram|facebook|tiktok)$"))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
+
+print("البوت يعمل الآن...")
+app.run_polling()
