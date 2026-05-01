@@ -6,9 +6,10 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # --- تحميل الإعدادات من ملف .env ---
-load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
-OWNER_ID = os.getenv("OWNER_ID")
+# بدلاً من load_dotenv() و os.getenv
+TOKEN = "8513954282:AAFiyYEYaBGTX5tUQ7-U0KLsfKW6Kdl_2HE"
+OWNER_ID = "6868896814"
+
 
 # --- لوحة المفاتيح الرئيسية ---
 def main_menu():
