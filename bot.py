@@ -1,12 +1,14 @@
 import os
 import yt_dlp
 import g4f  # مكتبة الذكاء الاصطناعي المجانية
+from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-# --- الإعدادات ---
-TOKEN = "8413954282:AAFiyYEYaBGTX5tUQ7-U0KLsfKW6Kdl_2HE" 
-OWNER_ID = "5868896814"
+# --- تحميل الإعدادات من ملف .env ---
+load_dotenv()
+TOKEN = os.getenv("BOT_TOKEN")
+OWNER_ID = os.getenv("OWNER_ID")
 
 # --- لوحة المفاتيح الرئيسية ---
 def main_menu():
@@ -46,16 +48,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
-    # 1. إذا كان رابط فيديو
     if "http" in text:
         if len(text.split()) > 1:
             await update.message.reply_text("⚠️ يرجى إرسال الرابط فقط بدون أي كلمات إضافية.")
             return
         await process_video_link(update, context, text)
-    
-    # 2. إذا كان كلام عادي (استخدام الذكاء الاصطناعي)
     else:
-        # إظهار حالة "يكتب الآن"
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
         answer = await ai_response(text)
         await update.message.reply_text(answer, reply_markup=main_menu())
@@ -93,7 +91,6 @@ async def process_video_link(update, context, url):
                 await msg.edit_text("❌ لم أجد جودات مدعومة، جرب رابطاً آخر.")
             else:
                 await msg.edit_text("✅ اختر الجودة التي تفضلها لبدء التنزيل:", reply_markup=InlineKeyboardMarkup(buttons))
-                
     except:
         await msg.edit_text("❌ فشل التحليل. قد يكون الفيديو خاصاً أو الرابط غير صالح.")
 
@@ -103,7 +100,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.data == "P":
         await query.message.reply_text("أرسل الرابط المباشر الآن وسأقوم بمعالجته 🔗")
-    
     elif query.data.startswith("dl"):
         _, url, f_id = query.data.split("|")
         await query.edit_message_text("📥 جاري تحميل الفيديو ودمجه... انتظر قليلاً.")
@@ -112,23 +108,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def download_video(target, context, url, f_id):
     chat_id = target.message.chat_id
     file_name = f"ATOM_{chat_id}.mp4"
-    
     ydl_opts = {
         'format': f"{f_id}+bestaudio/best",
         'outtmpl': file_name,
         'merge_output_format': 'mp4',
         'quiet': True,
     }
-    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
-        
         with open(file_name, 'rb') as video:
             await context.bot.send_video(
                 chat_id=chat_id, 
                 video=video, 
-                caption="✅ تم التحميل بنجاح بواسطة ATOM الذكي\n\nماذا تريد أن تفعل الآن؟",
+                caption="✅ تم التحميل بنجاح بواسطة ATOM الذكي",
                 reply_markup=main_menu()
             )
     except:
@@ -138,9 +131,12 @@ async def download_video(target, context, url, f_id):
             os.remove(file_name)
 
 if __name__ == "__main__":
-    print("ATOM AI Bot is Active...")
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.run_polling()
+    if not TOKEN:
+        print("Error: BOT_TOKEN not found in .env file!")
+    else:
+        print("ATOM AI Bot is Active...")
+        app = ApplicationBuilder().token(TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CallbackQueryHandler(button_callback))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        app.run_polling()
