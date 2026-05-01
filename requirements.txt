@@ -1,3 +1,4 @@
-python-telegram-bot[job-queue]
+python-telegram-bot
 yt-dlp
-aiohttp
+requests
+python-dotenv
