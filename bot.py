@@ -19,9 +19,9 @@ AI_RESPONSES = {
 # --- لوحة المفاتيح الرئيسية ---
 def main_menu():
     keyboard = [
-        [InlineKeyboardButton("Facebook 🟦", callback_data="P"), InlineKeyboardButton("TikTok 🖤", callback_data="P")],
-        [InlineKeyboardButton("YouTube 🟥", callback_data="P"), InlineKeyboardButton("Instagram 🟪", callback_data="P")],
-        [InlineKeyboardButton("X (Twitter) ⬛", callback_data="P")],
+        [InlineKeyboardButton("Facebook🐬", callback_data="P"), InlineKeyboardButton("TikTok 🕰️", callback_data="P")],
+        [InlineKeyboardButton("YouTube🪼", callback_data="P"), InlineKeyboardButton("Instagram 🦋", callback_data="P")],
+        [InlineKeyboardButton("X (Twitter) 🐦‍⬛", callback_data="P")],
         [InlineKeyboardButton("تواصل مع المالك 👨‍💻", url=f"tg://user?id={OWNER_ID}")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -35,7 +35,7 @@ def get_quality_label(height):
     return f"{height}p"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("مرحبًا أنا بوت مخصص للتنزيل فيديوهات من مواقع التواصل الاجتماعي، أرسل رابط مباشر أو اختر إحدى المنصات تحت:", reply_markup=main_menu())
+    await update.message.reply_text("مرحبًابك، أنا بوت ATLAS , 👇🦦💙🍷تم تصميمي للتنزيل فيديوهات من مواقع التواصل الاجتماعي، أرسل رابط مباشر أو اختر إحدى المنصات تحت:", reply_markup=main_menu())
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
@@ -44,7 +44,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "http" in text:
         # إذا كان النص يحتوي على أكثر من مجرد الرابط
         if len(text.split()) > 1:
-            await update.message.reply_text("رجاءً أرسل رابط بدون أي كلمات معه.")
+            await update.message.reply_text(" 🗿💔رجاءً أرسل رابط بدون أي كلمات معه.")
             return
         
         # إذا كان الرابط صحيحاً ومفرداً، نبدأ المعالجة
@@ -56,10 +56,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response:
             await update.message.reply_text(response)
         else:
-            await update.message.reply_text("عذراً، لم أفهمك. هل تريد تحميل فيديو؟ أرسل الرابط مباشرة.")
+            await update.message.reply_text("عذراً، لم أفهمك. هل تريد تحميل فيديو؟ 🦦أرسل الرابط مباشرة.")
 
 async def process_video_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url):
-    msg = await update.message.reply_text("⏳ جاري جلب الجودات المتاحة...")
+    msg = await update.message.reply_text("⏳ جاري بحث عن الجودات المتاحة...")
     try:
         ydl_opts = {
     'format': f"{f_id}+bestaudio/best", # يدمج الجودة المختارة مع أفضل صوت
