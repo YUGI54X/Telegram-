@@ -1,7 +1,6 @@
 import os
 import yt_dlp
 import re
-import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
@@ -17,12 +16,24 @@ DEFAULT_CHANNELS = [
 ]
 
 AI_RESPONSES = {
-    "من انت": "أنا بوت مخصص لتحميل الفيديوهات من مواقع التواصل الاجتماعي بجودة عالية.",
-    "كيف احمل": "أرسل رابط الفيديو المباشر وسأعطيك خيارات الجودة.",
-    "السلام عليكم": "وعليكم السلام ورحمة الله وبركاته! كيف يمكنني مساعدتك؟",
+    "من انت": "أنا بوت مايكي، مخصص لتحميل الفيديوهات من مواقع التواصل الاجتماعي بجودة عالية.",
+    "كيف احمل": "أرسل رابط الفيديو المباشر وسأعطيك خيارات الجودة المتوفرة.",
+    "السلام عليكم": "وعليكم السلام ورحمة الله وبركاته! كيف يمكنني مساعدتك يا بطل؟",
+    "شكرا": "العفو! أنا في الخدمة دائماً. 🌹",
 }
 
-WELCOME_MSG = "مرحبًا أنا بوت مايكي،مخصص للتنزيل فيديوهات من مواقع التواصل الاجتماعي، أرسل رابط مباشر أو اختر إحدى المنصات تحت:"
+WELCOME_MSG = "مرحبًا أنا بوت مايكي، مخصص للتنزيل فيديوهات من مواقع التواصل الاجتماعي، أرسل رابط مباشر أو اختر إحدى المنصات تحت:"
+
+# --- الإعدادات المتقدمة لـ yt-dlp (حل مشكلة فيسبوك) ---
+YDL_COMMON_OPTS = {
+    'quiet': True,
+    'no_warnings': True,
+    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'add_header': [
+        'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language: en-US,en;q=0.9',
+    ],
+}
 
 # --- الوظائف المساعدة ---
 def main_menu():
@@ -35,10 +46,10 @@ def main_menu():
     return InlineKeyboardMarkup(keyboard)
 
 def get_quality_label(height):
-    if height >= 2160: return "4K / UHD"
-    if height >= 1440: return "1440p / 2K"
-    if height >= 1080: return "1080p / FHD"
-    if height >= 720: return "720p / HD"
+    if height >= 2160: return "4K / UHD 💎"
+    if height >= 1440: return "1440p / 2K 🌟"
+    if height >= 1080: return "1080p / FHD ✨"
+    if height >= 720: return "720p / HD ✅"
     return f"{height}p"
 
 async def check_subscription(user_id, bot):
@@ -58,12 +69,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons.append([InlineKeyboardButton("✅ تحقق من الاشتراك", callback_data="verify")])
         await update.message.reply_text("🚫 يجب عليك الاشتراك في الحسابات التالية أولاً:", reply_markup=InlineKeyboardMarkup(buttons))
         return
-    
     await update.message.reply_text(WELCOME_MSG, reply_markup=main_menu())
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    
     if "http" in text:
         if len(text.split()) > 1:
             await update.message.reply_text("رجاءً أرسل رابط بدون أي كلمات معه.")
@@ -74,21 +83,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response: await update.message.reply_text(response)
 
 async def process_video(update: Update, context: ContextTypes.DEFAULT_TYPE, url):
-    msg = await update.message.reply_text("⏳ جاري جلب الجودات المتاحة...")
+    msg = await update.message.reply_text("⏳ جاري تحليل الرابط واستخراج الجودات...")
     try:
-        ydl_opts = {'quiet': True, 'no_warnings': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(YDL_COMMON_OPTS) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
             buttons = []
             seen = set()
+            # ترتيب تنازلي للجودات
             for f in sorted(formats, key=lambda x: x.get('height', 0), reverse=True):
                 h = f.get('height')
+                # تصفية لضمان وجود فيديو وصوت وعدم التكرار
                 if h and h >= 360 and h not in seen and f.get('vcodec') != 'none':
                     buttons.append([InlineKeyboardButton(get_quality_label(h), callback_data=f"dl|{url}|{f['format_id']}")])
                     seen.add(h)
-            await msg.edit_text("اختر الجودة المطلوبة:", reply_markup=InlineKeyboardMarkup(buttons[:10]))
-    except: await msg.edit_text("❌ فشل التحليل، تأكد من الرابط.")
+            
+            if not buttons:
+                await msg.edit_text("لم أجد جودات متعددة، هل تريد التحميل بأفضل جودة متاحة؟", 
+                                   reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("تحميل مباشر ✅", callback_data=f"dl|{url}|best")]]))
+            else:
+                await msg.edit_text("اختر الجودة المطلوبة للتحميل:", reply_markup=InlineKeyboardMarkup(buttons[:10]))
+    except Exception:
+        await msg.edit_text("❌ فشل تحليل الرابط. قد يكون الفيديو خاصاً أو الرابط غير مدعوم.")
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -99,32 +115,35 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.edit_text(WELCOME_MSG, reply_markup=main_menu())
         else:
             await query.answer("❌ لم تشترك في جميع القنوات بعد!", show_alert=True)
-            
+    elif query.data == "P":
+        await query.message.reply_text("حاضر! أرسل لي رابط الفيديو الآن 🔗")
     elif query.data.startswith("dl"):
         _, url, f_id = query.data.split("|")
-        await query.message.edit_text("📥 جاري التحميل والمعالجة...")
+        await query.message.edit_text("📥 جاري التحميل والمعالجة... قد يستغرق ذلك دقيقة.")
         await download_and_send(query, context, url, f_id)
 
 async def download_and_send(target, context, url, f_id):
     chat_id = target.message.chat_id
-    file_name = f"vid_{chat_id}.mp4"
+    file_name = f"video_{chat_id}.mp4"
     ydl_opts = {
-        'format': f"{f_id}+bestaudio/best",
+        **YDL_COMMON_OPTS,
+        'format': f"{f_id}+bestaudio/best" if f_id != "best" else "best",
         'outtmpl': file_name,
         'merge_output_format': 'mp4',
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
-        await context.bot.send_video(chat_id=chat_id, video=open(file_name, 'rb'), caption="تم التحميل بنجاح ✅")
+        await context.bot.send_video(chat_id=chat_id, video=open(file_name, 'rb'), caption="تم التحميل بواسطة بوت مايكي ✅")
         os.remove(file_name)
-        await context.bot.send_message(chat_id=chat_id, text=WELCOME_MSG, reply_markup=main_menu())
-    except: await context.bot.send_message(chat_id=chat_id, text="❌ خطأ في التحميل.")
+        await context.bot.send_message(chat_id=chat_id, text="هل تريد تحميل فيديو آخر؟ أرسل الرابط أو اختر منصة:", reply_markup=main_menu())
+    except Exception:
+        await context.bot.send_message(chat_id=chat_id, text="❌ حدث خطأ أثناء التحميل. جرب جودة أقل أو رابطاً آخر.")
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    print("البوت يعمل الآن بنجاح!")
     app.run_polling()
