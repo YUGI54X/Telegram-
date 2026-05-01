@@ -61,10 +61,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_video_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url):
     msg = await update.message.reply_text("⏳ جاري جلب الجودات المتاحة...")
     try:
-        ydl_opts = {'quiet': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            formats = info.get('formats', [])
+        ydl_opts = {
+    'format': f"{f_id}+bestaudio/best", # يدمج الجودة المختارة مع أفضل صوت
+    'outtmpl': file_name,
+    'merge_output_format': 'mp4', # يدمجهم في ملف بصيغة mp4
+    'quiet': True,
+    'noplaylist': True,
+}
+
             
             buttons = []
             heights_seen = set()
