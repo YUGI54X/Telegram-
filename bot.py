@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 TOKEN = "8413954282:AAHx_w5JNjCs7watnJaAfR_6bmgxiBmcBYo"
 OWNER_ID = "5868896814"
 
-# --- قاموس الرد الآلي (للأسئلة البسيطة) ---
+# --- قاموس الرد الآلي ---
 AI_RESPONSES = {
     "من انت": "أنا بوت مخصص لتحميل الفيديوهات من مواقع التواصل الاجتماعي بجودة عالية.",
     "كيف احمل": "فقط أرسل رابط الفيديو المباشر وسأعطيك خيارات الجودة المتاحة.",
@@ -19,8 +19,8 @@ AI_RESPONSES = {
 # --- لوحة المفاتيح الرئيسية ---
 def main_menu():
     keyboard = [
-        [InlineKeyboardButton("Facebook🐬", callback_data="P"), InlineKeyboardButton("TikTok 🕰️", callback_data="P")],
-        [InlineKeyboardButton("YouTube🪼", callback_data="P"), InlineKeyboardButton("Instagram 🦋", callback_data="P")],
+        [InlineKeyboardButton("Facebook 🐬", callback_data="P"), InlineKeyboardButton("TikTok 🕰️", callback_data="P")],
+        [InlineKeyboardButton("YouTube 🪼", callback_data="P"), InlineKeyboardButton("Instagram 🦋", callback_data="P")],
         [InlineKeyboardButton("X (Twitter) 🐦‍⬛", callback_data="P")],
         [InlineKeyboardButton("تواصل مع المالك 👨‍💻", url=f"tg://user?id={OWNER_ID}")]
     ]
@@ -35,58 +35,55 @@ def get_quality_label(height):
     return f"{height}p"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("مرحبًابك، أنا بوت ATLAS , 👇🦦💙🍷تم تصميمي للتنزيل فيديوهات من مواقع التواصل الاجتماعي، أرسل رابط مباشر أو اختر إحدى المنصات تحت:", reply_markup=main_menu())
+    await update.message.reply_text(
+        "مرحبًابك، أنا بوت ATLAS 🍷\nتم تصميمي للتنزيل من مواقع التواصل، أرسل رابطاً مباشراً أو اختر منصة:",
+        reply_markup=main_menu()
+    )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
-    # 1. التحقق إذا كان الرابط يحتوي على كلمات أخرى
     if "http" in text:
-        # إذا كان النص يحتوي على أكثر من مجرد الرابط
         if len(text.split()) > 1:
-            await update.message.reply_text(" 🗿💔رجاءً أرسل رابط بدون أي كلمات معه.")
+            await update.message.reply_text("رجاءً أرسل رابطاً وحيداً بدون كلمات إضافية.")
             return
-        
-        # إذا كان الرابط صحيحاً ومفرداً، نبدأ المعالجة
         await process_video_link(update, context, text)
-    
-    # 2. الرد على الأسئلة (نظام AI بسيط)
     else:
         response = next((v for k, v in AI_RESPONSES.items() if k in text), None)
         if response:
             await update.message.reply_text(response)
         else:
-            await update.message.reply_text("عذراً، لم أفهمك. هل تريد تحميل فيديو؟ 🦦أرسل الرابط مباشرة.")
+            await update.message.reply_text("عذراً، لم أفهمك. أرسل رابط الفيديو مباشرة 🦦")
 
 async def process_video_link(update: Update, context: ContextTypes.DEFAULT_TYPE, url):
-    msg = await update.message.reply_text("⏳ جاري بحث عن الجودات المتاحة...")
+    msg = await update.message.reply_text("⏳ جاري استخراج الجودات المتاحة...")
     try:
-        ydl_opts = {
-    'format': f"{f_id}+bestaudio/best", # يدمج الجودة المختارة مع أفضل صوت
-    'outtmpl': file_name,
-    'merge_output_format': 'mp4', # يدمجهم في ملف بصيغة mp4
-    'quiet': True,
-    'noplaylist': True,
-}
-
+        # إعدادات الفحص فقط
+        ydl_opts = {'quiet': True, 'noplaylist': True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            formats = info.get('formats', [])
             
             buttons = []
             heights_seen = set()
-            # ترتيب الجودات من الأعلى للأقل
-            for f in sorted(formats, key=lambda x: x.get('height', 0), reverse=True):
+            
+            # ترتيب وتصفية الجودات
+            for f in sorted(formats, key=lambda x: x.get('height', 0) or 0, reverse=True):
                 h = f.get('height')
-                if h and h >= 360 and h not in heights_seen and f.get('vcodec') != 'none':
+                # نختار الصيغ التي تحتوي فيديو وصوت أو فيديو فقط ليتم دمجها لاحقاً
+                if h and h >= 144 and h not in heights_seen:
                     label = get_quality_label(h)
                     buttons.append([InlineKeyboardButton(label, callback_data=f"dl|{url}|{f['format_id']}")])
                     heights_seen.add(h)
             
             if not buttons:
-                await msg.edit_text("جاري التحميل بأفضل جودة تلقائياً...")
+                await msg.edit_text("لم أتمكن من العثور على جودات محددة، جاري التحميل التلقائي...")
                 await download_video(update, context, url, "best")
             else:
                 await msg.edit_text("اختر الجودة المطلوبة:", reply_markup=InlineKeyboardMarkup(buttons[:10]))
-    except:
-        await msg.edit_text("❌ فشل تحليل الرابط. تأكد من أن الفيديو عام.")
+    except Exception as e:
+        print(f"Error: {e}")
+        await msg.edit_text("❌ فشل تحليل الرابط. تأكد من صحة الرابط أو خصوصية الفيديو.")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -96,31 +93,47 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("أرسل رابط الفيديو المباشر الآن 🔗")
     elif query.data.startswith("dl"):
         _, url, f_id = query.data.split("|")
-        await query.message.edit_text("📥 جاري تحميل الفيديو ومعالجته...")
+        await query.edit_message_text("📥 جاري تحميل الفيديو ومعالجته... قد يستغرق ذلك دقيقة.")
         await download_video(query, context, url, f_id)
 
 async def download_video(target, context, url, f_id):
+    # تحديد ID الشات سواء من رسالة أو من زر
     chat_id = target.message.chat_id if hasattr(target, 'message') else target.chat_id
-    file_name = f"video_{chat_id}.mp4"
+    file_name = f"video_{chat_id}_{f_id}.mp4"
+    
     ydl_opts = {
         'format': f"{f_id}+bestaudio/best",
         'outtmpl': file_name,
         'merge_output_format': 'mp4',
         'quiet': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
         
-        await context.bot.send_video(chat_id=chat_id, video=open(file_name, 'rb'), caption="تم التحميل بنجاح ✅")
-        os.remove(file_name)
-        await context.bot.send_message(chat_id=chat_id, text="هل تريد تحميل شيء آخر؟ أرسل الرابط أو اختر منصة:", reply_markup=main_menu())
-    except:
-        await context.bot.send_message(chat_id=chat_id, text="❌ حدث خطأ أثناء التحميل.")
+        # إرسال الفيديو
+        with open(file_name, 'rb') as video_file:
+            await context.bot.send_video(
+                chat_id=chat_id, 
+                video=video_file, 
+                caption="تم التحميل بنجاح ✅ بواسطة ATLAS"
+            )
+        
+        # حذف الملف بعد الإرسال لتوفير المساحة
+        if os.path.exists(file_name):
+            os.remove(file_name)
+
+    except Exception as e:
+        print(f"Download Error: {e}")
+        await context.bot.send_message(chat_id=chat_id, text="❌ حدث خطأ أثناء التحميل أو الدمج.")
+    finally:
+        # التأكد من حذف الملف في حال حدوث خطأ
+        if os.path.exists(file_name):
+            os.remove(file_name)
 
 if __name__ == "__main__":
+    print("البوت يعمل الآن...")
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_callback))
