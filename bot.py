@@ -1,23 +1,23 @@
 import os
 import yt_dlp
+import g4f  # مكتبة الذكاء الاصطناعي المجانية
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # --- الإعدادات ---
-TOKEN = "8413954282:AAFiyYEYaBGTX5tUQ7-U0KLsfKW6Kdl_2HE" # استبدله بتوكن جديد دائماً
+TOKEN = "8413954282:AAFiyYEYaBGTX5tUQ7-U0KLsfKW6Kdl_2HE" 
 OWNER_ID = "5868896814"
 
 # --- لوحة المفاتيح الرئيسية ---
 def main_menu():
     keyboard = [
-        [InlineKeyboardButton("Facebook 🐬", callback_data="PLATFORM"), InlineKeyboardButton("TikTok 🕰️", callback_data="PLATFORM")],
-        [InlineKeyboardButton("YouTube 🪼", callback_data="PLATFORM"), InlineKeyboardButton("Instagram 🦋", callback_data="PLATFORM")],
-        [InlineKeyboardButton("X (Twitter) 🐦‍⬛", callback_data="PLATFORM")],
+        [InlineKeyboardButton("Facebook 🐬", callback_data="P"), InlineKeyboardButton("TikTok 🕰️", callback_data="P")],
+        [InlineKeyboardButton("YouTube 🪼", callback_data="P"), InlineKeyboardButton("Instagram 🦋", callback_data="P")],
+        [InlineKeyboardButton("X (Twitter) 🐦‍⬛", callback_data="P")],
         [InlineKeyboardButton("تواصل مع المالك 👨‍💻", url=f"tg://user?id={OWNER_ID}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- دالة تسمية الجودة بناءً على طلبك ---
 def get_quality_label(height):
     if height >= 2160: return "4K (2160p - UHD) 🔥"
     if height >= 1080: return "1080p (FHD - Full HD) ✨"
@@ -25,27 +25,43 @@ def get_quality_label(height):
     if height >= 480: return "480p (SD) 📱"
     return f"{height}p"
 
+# --- محرك الذكاء الاصطناعي ---
+async def ai_response(user_text):
+    try:
+        response = await g4f.ChatCompletion.create_async(
+            model=g4f.models.gpt_35_turbo,
+            messages=[{"role": "user", "content": f"أنت بوت ذكي اسمك ATOM، خبير في تحميل الفيديوهات وتجيب بذكاء وأناقة. أجب على هذا: {user_text}"}],
+        )
+        return response
+    except:
+        return "عذراً، أنا أتعلم حالياً. هل يمكنني مساعدتك برابط فيديو لتحميله؟ 🦦"
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
-        "مرحبا بك آنا بوت ATOM، لقد تم تصميمي للتنزيل فيديوهات من مواقع التواصل الأجتماعي "
-        "بجودة عالية 4k، فقط أرسل لي رابط أو أختر أزرار تحت وسأقوم بتحميل 📥"
+        "مرحبا بك آنا بوت ATOM الذكي 🧠، لقد تم تصميمي للتنزيل من مواقع التواصل "
+        "بجودة تصل إلى 4k. يمكنني أيضاً الإجابة على أسئلتك! أرسل رابطاً أو اسألني شيئاً 👇"
     )
     await update.message.reply_text(welcome_text, reply_markup=main_menu())
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
+    # 1. إذا كان رابط فيديو
     if "http" in text:
-        # التحقق إذا كان هناك كلمات مع الرابط
         if len(text.split()) > 1:
-            await update.message.reply_text("❌ رجاءً أرسل الرابط بمفرده بدون أي كلمات إضافية.")
+            await update.message.reply_text("⚠️ يرجى إرسال الرابط فقط بدون أي كلمات إضافية.")
             return
         await process_video_link(update, context, text)
+    
+    # 2. إذا كان كلام عادي (استخدام الذكاء الاصطناعي)
     else:
-        await update.message.reply_text("عذراً، أرسل رابط الفيديو المباشر 🔗 أو اختر منصة من الأسفل:", reply_markup=main_menu())
+        # إظهار حالة "يكتب الآن"
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        answer = await ai_response(text)
+        await update.message.reply_text(answer, reply_markup=main_menu())
 
 async def process_video_link(update, context, url):
-    msg = await update.message.reply_text("⏳ جاري فحص الرابط واستخراج الجودات...")
+    msg = await update.message.reply_text("⏳ جاري تحليل الرابط بذكاء...")
     try:
         ydl_opts = {'quiet': True, 'noplaylist': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -53,47 +69,52 @@ async def process_video_link(update, context, url):
             formats = info.get('formats', [])
             buttons = []
             heights_seen = set()
-            
-            # ترتيب الجودات المطلوبة (2160, 1080, 720, 480)
             target_heights = [2160, 1080, 720, 480]
             
-            # فلترة الجودات المتاحة فعلياً في الفيديو
-            for f in sorted(formats, key=lambda x: x.get('height', 0) or 0, reverse=True):
-                h = f.get('height')
-                if h in target_heights and h not in heights_seen:
-                    label = get_quality_label(h)
-                    buttons.append([InlineKeyboardButton(label, callback_data=f"dl|{url}|{f['format_id']}")])
-                    heights_seen.add(h)
-            
+            available_formats = sorted(formats, key=lambda x: x.get('height', 0) or 0, reverse=True)
+
+            for target in target_heights:
+                for f in available_formats:
+                    h = f.get('height')
+                    if h == target and h not in heights_seen:
+                        label = get_quality_label(h)
+                        buttons.append([InlineKeyboardButton(label, callback_data=f"dl|{url}|{f['format_id']}")])
+                        heights_seen.add(h)
+                        break
+
             if not buttons:
-                # إذا لم يجد الجودات المحددة، يعرض أفضل جودة متاحة
-                await msg.edit_text("لم أجد الجودات القياسية، جاري التحميل بأفضل جودة متاحة...")
-                await download_video(update, context, url, "best")
+                for f in available_formats[:5]:
+                    h = f.get('height')
+                    if h and h not in heights_seen:
+                        buttons.append([InlineKeyboardButton(f"{h}p", callback_data=f"dl|{url}|{f['format_id']}")])
+                        heights_seen.add(h)
+
+            if not buttons:
+                await msg.edit_text("❌ لم أجد جودات مدعومة، جرب رابطاً آخر.")
             else:
-                await msg.edit_text("✅ اختر الجودة المطلوبة للبدء:", reply_markup=InlineKeyboardMarkup(buttons))
+                await msg.edit_text("✅ اختر الجودة التي تفضلها لبدء التنزيل:", reply_markup=InlineKeyboardMarkup(buttons))
                 
-    except Exception as e:
-        await msg.edit_text("❌ فشل تحليل الرابط. تأكد من أن الحساب عام وليس خاصاً.")
+    except:
+        await msg.edit_text("❌ فشل التحليل. قد يكون الفيديو خاصاً أو الرابط غير صالح.")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    if query.data == "PLATFORM":
-        await query.message.reply_text("حسناً، أرسل الرابط المباشر للفيديو الآن 🔗")
+    if query.data == "P":
+        await query.message.reply_text("أرسل الرابط المباشر الآن وسأقوم بمعالجته 🔗")
     
     elif query.data.startswith("dl"):
         _, url, f_id = query.data.split("|")
-        await query.edit_message_text("📥 جاري التحميل والمعالجة... قد يستغرق ذلك وقتاً حسب الحجم.")
+        await query.edit_message_text("📥 جاري تحميل الفيديو ودمجه... انتظر قليلاً.")
         await download_video(query, context, url, f_id)
 
 async def download_video(target, context, url, f_id):
-    chat_id = target.message.chat_id if hasattr(target, 'message') else target.chat_id
+    chat_id = target.message.chat_id
     file_name = f"ATOM_{chat_id}.mp4"
     
-    # إعدادات التحميل الاحترافية للدمج
     ydl_opts = {
-        'format': f"{f_id}+bestaudio/best/best",
+        'format': f"{f_id}+bestaudio/best",
         'outtmpl': file_name,
         'merge_output_format': 'mp4',
         'quiet': True,
@@ -103,25 +124,23 @@ async def download_video(target, context, url, f_id):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
         
-        # إرسال الفيديو
         with open(file_name, 'rb') as video:
             await context.bot.send_video(
                 chat_id=chat_id, 
                 video=video, 
-                caption="✅ تم التحميل بنجاح بواسطة ATOM\n\nأرسل رابطاً آخر أو اختر منصة:",
+                caption="✅ تم التحميل بنجاح بواسطة ATOM الذكي\n\nماذا تريد أن تفعل الآن؟",
                 reply_markup=main_menu()
             )
-    except Exception as e:
-        await context.bot.send_message(chat_id=chat_id, text=f"❌ حدث خطأ أثناء التحميل: الرابط قد يكون غير مدعوم حالياً.")
+    except:
+        await context.bot.send_message(chat_id=chat_id, text="❌ حدث خطأ غير متوقع أثناء التحميل.")
     finally:
         if os.path.exists(file_name):
             os.remove(file_name)
 
 if __name__ == "__main__":
+    print("ATOM AI Bot is Active...")
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    print("ATOM Bot is Running...")
     app.run_polling()
