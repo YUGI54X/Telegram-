@@ -5,8 +5,16 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # --- الإعدادات ---
-TOKEN = "8413954282:AAFefAG3CE19kiA1po7Ha5muTudZ1oOrnQA" 
-OWNER_ID = "5868896814"
+import os
+from dotenv import load_dotenv
+
+# تحميل البيانات من ملف .env
+load_dotenv()
+
+# قراءة التوكن والـ ID
+TELEGRAM_TOKEN = os.getenv('BOT_TOKEN')
+OWNER_ID = os.getenv('OWNER_ID') # سيقوم بقراءة الرقم من الملف
+
 
 # --- لوحة المفاتيح الرئيسية ---
 def main_menu():
