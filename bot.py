@@ -9,8 +9,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 
 # --- الإعدادات ---
 load_dotenv()
-TELEGRAM_TOKEN = os.getenv('BOT_TOKEN')
-OWNER_ID = os.getenv('OWNER_ID')
+TELEGRAM_TOKEN = os.getenv('8413954282:AAFefAG3CE19kiA1po7Ha5muTudZ1oOrnQA')
+OWNER_ID = os.getenv('5868896814')
 STARS_PRICE = int(os.getenv('STARS_PRICE', '100'))
 FREE_LIMIT = 15
 DATA_FILE = "users_data.json"
