@@ -1,3 +1,2 @@
-python-telegram-bot
-yt-dlp
-g4f
+yt-dlp[default,curl-cffi]
+python-telegram-bot>=20.0
