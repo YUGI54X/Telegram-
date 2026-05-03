@@ -8,8 +8,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Labeled
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, PreCheckoutQueryHandler
 
 # --- الإعدادات ---
-TOKEN = "8413954282:AAFefAG3CE19kiA1po7Ha5muTudZ1oOrnQA"
-OWNER_ID = "5868896814"
+TOKEN = ""
+OWNER_ID = ""
 STARS_PRICE = int(os.getenv('STARS_PRICE', '100'))
 FREE_LIMIT = 15
 DATA_FILE = "users_data.json"
